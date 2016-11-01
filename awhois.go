@@ -1,30 +1,20 @@
-package main
+package awhois
 
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
-	"os"
 )
-
-type match struct {
-	network *net.IPNet
-	region  string
-	service string
-}
-
-func (m *match) String() string {
-	return fmt.Sprintf("%s (%s %s)", m.network, m.service, m.region)
-}
 
 type response struct {
 	IPv6Prefixes []map[string]string `json:"ipv6_prefixes"`
 	Prefixes     []map[string]string
 }
 
-func main() {
+// Check tests if a given IP has AWS matches. No matches are not an error but an
+// empty slice.
+func Check(ip net.IP) ([]*Match, error) {
 
 	const (
 		reg = "region"
@@ -33,14 +23,9 @@ func main() {
 		v6p = "ipv6_prefix"
 	)
 
-	if len(os.Args) != 2 {
-		log.Fatalf("usage: %s :ip-address", os.Args[0])
-	}
-
 	var (
-		ip      = net.ParseIP(os.Args[1])
 		key     string
-		matches []*match
+		matches []*Match
 		targets []map[string]string
 		v4      = ip.To4() != nil
 	)
@@ -48,7 +33,7 @@ func main() {
 	r, err := fetch()
 
 	if err != nil {
-		log.Fatalf("failed to retrieve IP prefixes: %s", err)
+		return nil, fmt.Errorf("failed to retrieve IP prefixes: %s", err)
 	}
 
 	if v4 {
@@ -69,33 +54,28 @@ func main() {
 		)
 
 		if prefix, ok = e[key]; !ok {
-			log.Fatalf("unexpected data at %s", e)
+			return nil, fmt.Errorf("unexpected data at %s", e)
 		}
 
 		_, network, err := net.ParseCIDR(prefix)
 
 		if err != nil {
-			log.Fatalf("failed to parse prefix %q: %s", prefix, err)
+			return nil, fmt.Errorf("failed to parse prefix %q: %s", prefix, err)
 		}
 
 		if network.Contains(ip) {
 
-			matches = append(matches, &match{
-				network: network,
-				region:  region,
-				service: service,
+			matches = append(matches, &Match{
+				Network: network,
+				Region:  region,
+				Service: service,
 			})
 
 		}
 
 	}
 
-	if len(matches) == 0 {
-		log.Printf("%s is not part of AWS", ip)
-		os.Exit(1)
-	}
-
-	log.Printf("%s is part of AWS: %s", ip, matches)
+	return matches, nil
 
 }
 
@@ -114,7 +94,7 @@ func fetch() (*response, error) {
 	defer res.Body.Close()
 
 	if err := json.NewDecoder(res.Body).Decode(response); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to decode response: %s", err)
 	}
 
 	return response, nil
