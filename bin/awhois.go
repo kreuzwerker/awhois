@@ -7,7 +7,7 @@ import (
 	"net"
 	"os"
 
-	"github.com/yawn/awhois"
+	"github.com/kreuzwerker/awhois"
 )
 
 type result struct {
